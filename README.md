@@ -82,7 +82,7 @@ Everything is an environment variable, read and validated once in `src/iris/conf
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | yes | Database credentials |
 | `POSTGRES_HOST`, `POSTGRES_PORT` | no | Compose sets `db` and `5432` |
 | `IRIS_AREA_TOLERANCE_PCT` | no | Allowed gap between declared area and geometry, default 5 |
-| `IRIS_DB_CONNECT_RETRIES`, `IRIS_DB_CONNECT_RETRY_DELAY_S` | no | Connection retry budget, default 30 tries, 1 s apart |
+| `IRIS_DB_CONNECT_RETRIES`, `IRIS_DB_CONNECT_RETRY_DELAY_S`, `IRIS_DB_CONNECT_TIMEOUT_S` | no | Connection retry budget, default 30 tries, 1 s apart |
 | `IRIS_MIGRATIONS_DIR`, `IRIS_FIXTURES_DIR` | no | Default to `/app/...` in the image |
 | `IRIS_SOURCE_TIMEOUT_S`, `IRIS_SOURCE_MAX_BYTES` | no | Limits for HTTP sources |
 | `POSTGIS_IMAGE`, `COMPOSE_PROJECT_NAME`, `IRIS_UID`, `IRIS_GID`, `IRIS_IMAGE`, `IRIS_LOG_LEVEL` | no | Compose and host plumbing |
