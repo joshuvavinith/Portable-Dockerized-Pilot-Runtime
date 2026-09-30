@@ -1,142 +1,144 @@
-# IRIS Pilot: Portable Dockerized Runtime (IRIS-CAND-09)
+# IRIS pilot runtime (IRIS-CAND-09)
 
-PostgreSQL/PostGIS + a Python worker, packaged so that **country, region, source
-endpoint, DB credentials and output path are configuration, not code**. The same
-unmodified image runs `DE/NW` on a dev machine and `NL/LI` on a second host.
+This packages the IRIS pilot as a PostgreSQL/PostGIS database plus a small Python worker, run with Docker Compose. The point of the exercise is that nothing about a particular country, region, host or path lives in the code. I run `DE/NW` on my machine and `NL/LI` with a different env file, using the same image and the same source tree.
 
 > Preliminary prospecting material. Figures, eco-point estimates and site suitability are indicative and based on available source data and commercial screening assumptions. The 8 eco-points/m2 factor is the current commercial baseline, not certified compensation. Ownership, planning, grid capacity, environmental eligibility and transferability remain subject to project-specific verification. No permit, reservation or construction readiness is represented.
 
-## Quick start (clean host, ~3 commands)
+## Running it
+
+You need Docker with Compose v2 and an internet connection for the first build (base images and Python wheels). After that nothing needs the network, because the default data source is a fixture committed in `fixtures/`.
+
+Linux / macOS / Git Bash:
 
 ```bash
-cp .env.example .env                                   # 1. dev config (DE/NW)
-export IRIS_UID=$(id -u) IRIS_GID=$(id -g)             #    Linux: makes ./output writable
-docker compose --profile smoke run --build --rm smoke  # 2. DB -> healthy -> worker -> smoke test
-docker compose down -v                                 # 3. clean up (drops the DB volume)
+cp .env.example .env
+export IRIS_UID=$(id -u) IRIS_GID=$(id -g)      # Linux only, see "Host assumptions"
+docker compose --profile smoke run --build --rm smoke
+docker compose down -v
 ```
 
-Expected end of output: `SMOKE TEST PASSED`. The worker's result is in
-`./output/iris_run_summary_DE_NW.json`.
+Windows PowerShell (skip the uid lines, Docker Desktop doesn't need them):
 
-### Second host (different country, region, paths, project)
+```powershell
+Copy-Item .env.example .env
+docker compose --profile smoke run --build --rm smoke
+docker compose down -v
+```
+
+That one `run` command starts PostGIS, waits for it to be healthy, runs the worker to completion, then runs the smoke test. It should finish with `SMOKE TEST PASSED`, and the worker's result is in `output/iris_run_summary_DE_NW.json`.
+
+### Running the second configuration
+
+`.env.second-host.example` is the same stack pointed at `NL/LI`, with a different container output path, database name, project name and published DB port. Its password is left empty on purpose so there is no default credential in the repo. Set one for your shell session first:
 
 ```bash
-export IRIS_UID=$(id -u) IRIS_GID=$(id -g)
-export POSTGRES_PASSWORD="$(openssl rand -hex 16)"     # template leaves it empty on purpose
+export POSTGRES_PASSWORD="$(openssl rand -hex 16)"
 docker compose --env-file .env.second-host.example --profile smoke run --build --rm smoke
-docker compose --env-file .env.second-host.example down -v
+docker compose --env-file .env.second-host.example --profile smoke --profile test down -v
 ```
 
-`scripts/verify-portability.sh` (or `make portability`) runs both configurations back to back.
+```powershell
+$env:POSTGRES_PASSWORD = [guid]::NewGuid().ToString("N")
+docker compose --env-file .env.second-host.example --profile smoke run --build --rm smoke
+docker compose --env-file .env.second-host.example --profile smoke --profile test down -v
+```
 
-## Commands
+Two things that tripped me up while testing. First, Postgres only reads the password when it creates the data volume, so if you change the password you have to `down -v` the matching project first. Second, `down` only cleans the project named by the env file you pass, so pass the same `--env-file` you started with.
 
-| Goal | Command |
+### Other commands
+
+| What | Command |
 |---|---|
-| Run stack + worker once | `docker compose up --build --abort-on-container-exit --exit-code-from worker worker` |
-| **Smoke test** | `docker compose --profile smoke run --build --rm smoke` |
-| Full test suite (unit + DB integration, in Docker) | `docker compose --profile test run --build --rm test` |
-| Use another config | add `--env-file <file>` to any command above |
-| Stop, keep data / delete data | `docker compose down` / `docker compose down -v` |
-| Find the published DB port | `docker compose port db 5432` |
+| Smoke test | `docker compose --profile smoke run --build --rm smoke` |
+| Tests (unit and DB-backed, inside Docker) | `docker compose --profile test run --build --rm test` |
+| Worker only | `docker compose up --build --abort-on-container-exit --exit-code-from worker worker` |
+| Both configs back to back | `bash scripts/verify-portability.sh` |
+| Find the DB's published port | `docker compose port db 5432` |
 
-`make init | up | smoke | test | reset | portability` are optional wrappers around the same commands.
+The Makefile has shortcuts for the same commands. They are optional.
 
-Local (no Docker) development: `pip install -r requirements.txt -r requirements-test.txt && pip install -e .`,
-export the variables from `.env`, then `iris-worker`, `iris-smoke`, `pytest`. Integration tests
-need `POSTGRES_HOST/USER/PASSWORD/DB` pointing at a PostgreSQL 16 + PostGIS 3.4 superuser; without them they are skipped
-(the Docker `test` service always provides them).
+To work without Docker, install `requirements.txt` and `requirements-test.txt`, `pip install -e .`, export the variables from `.env`, and run `iris-worker`, `iris-smoke` and `pytest`. The integration tests need `POSTGRES_HOST`, `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB` pointing at a PostgreSQL 16 + PostGIS 3.4 superuser, and skip themselves otherwise.
 
 ## Host assumptions
 
-* Docker Engine 24+ with **Compose v2** (`docker compose`, needs `service_healthy` / `service_completed_successfully`).
-* Outbound access to pull `postgis/postgis:16-3.4`, `python:3.12-slim` and PyPI wheels **at build time only**. The runtime needs no internet (default source is a local fixture).
-* `linux/amd64` is the reference platform. On other architectures check that the chosen PostGIS tag is published for it, or set `POSTGIS_IMAGE` (any PostgreSQL 16+/PostGIS 3.4+ image).
-* ~1 GB free disk; no host PostgreSQL required. The DB port is published on `127.0.0.1` with a **random** host port (set `POSTGRES_PUBLISH_PORT` to pin it), so an existing local PostgreSQL on 5432 does not conflict.
-* `IRIS_OUTPUT_HOST_DIR` must exist and be writable by `IRIS_UID:IRIS_GID` (the worker runs as that unprivileged user with a read-only root filesystem, all capabilities dropped and `no-new-privileges`). `./output/.gitkeep` is committed so the default exists. On Docker Desktop (macOS/Windows) the uid setting is harmless.
-* Windows: use WSL2 or Git Bash for the shell snippets; the compose commands are identical.
+- Docker Engine 24 or newer with Compose v2. I rely on `service_healthy` and `service_completed_successfully`.
+- The reference platform is linux/amd64. The `postgis/postgis` tag may not be published for other architectures, so on those set `POSTGIS_IMAGE` to any PostgreSQL 16+ / PostGIS 3.4+ image.
+- About 1 GB of disk. No PostgreSQL needs to be installed on the host.
+- The DB port is published on `127.0.0.1` only, on a random free port unless you set `POSTGRES_PUBLISH_PORT`. I did that so a host that already runs Postgres on 5432 doesn't break the stack.
+- The worker runs as an unprivileged user, not root. On Linux it needs to match the owner of the output directory, hence `IRIS_UID` and `IRIS_GID`. `IRIS_OUTPUT_HOST_DIR` must exist and be writable by that user. `output/.gitkeep` is committed so the default exists.
+- Docker Desktop on Windows and macOS handles file ownership itself, so the uid settings can be ignored there.
 
-## Configuration reference
+## Configuration
 
-All values are environment variables (validated in `src/iris/config.py`; every problem is reported at once, the process exits `2`).
+Everything is an environment variable, read and validated once in `src/iris/config.py`. If several are wrong it reports all of them together and exits with code 2.
 
 | Variable | Required | Meaning |
 |---|---|---|
-| `IRIS_COUNTRY_CODE` | yes | ISO 3166-1 alpha-2, upper case (`DE`) |
-| `IRIS_REGION_CODE` | yes | 1-8 upper-case letters/digits (`NW`) |
-| `IRIS_SOURCE_ENDPOINT` | yes | `fixture://<file in fixtures dir>` or `http(s)://...` GeoJSON |
-| `IRIS_OUTPUT_PATH` | yes | absolute path **inside the container** for the run summary |
-| `IRIS_OUTPUT_HOST_DIR` | no (`./output`) | host directory mounted at `IRIS_OUTPUT_PATH` |
-| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | yes | DB credentials. `POSTGRES_PASSWORD_FILE` is supported by the app for secret files |
-| `POSTGRES_HOST` / `POSTGRES_PORT` | no (`db` / `5432` in compose) | DB address |
-| `IRIS_MIGRATIONS_DIR`, `IRIS_FIXTURES_DIR` | no | default `/app/...` in the image |
-| `IRIS_DB_CONNECT_RETRIES` / `_RETRY_DELAY_S` / `_TIMEOUT_S` | no (30 / 1 / 5) | bounded connect retry (defence in depth behind the health check) |
-| `IRIS_AREA_TOLERANCE_PCT` | no (5) | allowed disagreement between declared area and geometry |
-| `IRIS_SOURCE_TIMEOUT_S`, `IRIS_SOURCE_MAX_BYTES` | no | limits for `http(s)` sources |
-| `IRIS_UID`, `IRIS_GID`, `IRIS_IMAGE`, `POSTGIS_IMAGE`, `POSTGRES_PUBLISH_PORT`, `COMPOSE_PROJECT_NAME`, `IRIS_LOG_LEVEL` | no | host/compose plumbing |
+| `IRIS_COUNTRY_CODE` | yes | Upper-case ISO 3166-1 alpha-2, for example `DE` |
+| `IRIS_REGION_CODE` | yes | 1 to 8 upper-case letters or digits, for example `NW` |
+| `IRIS_SOURCE_ENDPOINT` | yes | `fixture://<file in fixtures/>` or an `http(s)://` GeoJSON URL |
+| `IRIS_OUTPUT_PATH` | yes | Absolute path inside the container for the run summary |
+| `IRIS_OUTPUT_HOST_DIR` | no | Host folder mounted at that path, default `./output` |
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | yes | Database credentials |
+| `POSTGRES_HOST`, `POSTGRES_PORT` | no | Compose sets `db` and `5432` |
+| `IRIS_AREA_TOLERANCE_PCT` | no | Allowed gap between declared area and geometry, default 5 |
+| `IRIS_DB_CONNECT_RETRIES`, `IRIS_DB_CONNECT_RETRY_DELAY_S` | no | Connection retry budget, default 30 tries, 1 s apart |
+| `IRIS_MIGRATIONS_DIR`, `IRIS_FIXTURES_DIR` | no | Default to `/app/...` in the image |
+| `IRIS_SOURCE_TIMEOUT_S`, `IRIS_SOURCE_MAX_BYTES` | no | Limits for HTTP sources |
+| `POSTGIS_IMAGE`, `COMPOSE_PROJECT_NAME`, `IRIS_UID`, `IRIS_GID`, `IRIS_IMAGE`, `IRIS_LOG_LEVEL` | no | Compose and host plumbing |
 
-## Architecture
+The app also accepts `POSTGRES_PASSWORD_FILE` instead of `POSTGRES_PASSWORD`, which is how I would pass it with Docker or Kubernetes secrets.
 
-```
-docker compose
-  db      postgis/postgis:16-3.4   healthcheck: pg_isready over TCP
-   ▲ service_healthy
-  worker  python -m iris.worker    migrate -> load source -> validate -> ingest -> summary   (one-shot)
-   ▲ service_completed_successfully
-  smoke   python -m iris.smoke     asserts DB versions, schema, data, run log, output file    (profile: smoke)
-  test    pytest                   unit + real-PostGIS integration tests                       (profile: test)
-```
+## How it fits together
 
-* **Deterministic startup migrations** (DDL is also `IF NOT EXISTS`, so re-running the raw SQL by hand is harmless; never edit a migration that has been applied, add a new one): `migrations/NNN_name.sql` applied in numeric order, one transaction each, guarded by a Postgres advisory lock (two workers cannot race), recorded with a SHA-256 checksum. Editing an already-applied file, or a DB that is ahead of the code, is refused instead of ignored.
-* **DB healthy before worker**: `depends_on: service_healthy`. The check uses `pg_isready -h 127.0.0.1` (TCP) on purpose: the official image runs a temporary socket-only server during first init, so a socket check can pass too early. The worker additionally retries connections a bounded number of times and **fails fast** on wrong credentials.
-* **No secrets in images**: the Dockerfile copies only code, migrations and fixtures; `.env*` are excluded by `.dockerignore` and git-ignored; credentials arrive as run-time environment variables (compose refuses to start if one is missing). The password is excluded from `repr`, the summary and logs; source URLs are stored **redacted** (no userinfo/query). CI asserts the image contains no password.
-* **Container hardening**: unprivileged user, read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, DB bound to loopback, pinned dependency versions.
+There are four services in `docker-compose.yml`: `db` (PostGIS), `worker` (runs once and exits), `smoke` (the smoke test, behind the `smoke` profile) and `test` (pytest, behind the `test` profile). The worker waits for `db` to be healthy, and `smoke` waits for the worker to finish successfully.
 
-## Data contracts (nothing is silently invented)
+The worker does five things in order: apply migrations, load the source, validate every feature, upsert the sites, write a JSON summary. A row is also written to `pilot_runs` for every run, successful or not, so the last result for a country and region can be checked in the database.
 
-| Contract | Enforcement |
-|---|---|
-| Canonical geometry | column `sites.geom geometry(Polygon, 4326)`, `CHECK ST_IsValid` |
-| `country_code` | `NOT NULL` + `^[A-Z]{2}$` check on every business table; keys are `(country_code, id)`, so `site-001` may exist in both `DE` and `NL` |
-| CRS | only WGS 84 lon/lat accepted; declared foreign CRS is rejected; coordinates outside lon/lat range (projected data, mislabelled) are rejected |
-| Units | source must declare `source_units = "m2"` |
-| Area vs geometry | declared `area_m2` must match the geometry within `max(uncertainty_m2, IRIS_AREA_TOLERANCE_PCT %)` (catches ha/m2 and CRS mistakes) |
-| Source date, uncertainty | required, `YYYY-MM-DD` / finite number; missing values are errors, never defaulted |
-| Batch semantics | all-or-nothing per run; every validation error is reported; failures are logged in `pilot_runs` |
-| Scope | only the configured `country/region` is ingested; other features are counted and skipped |
+Some decisions worth explaining:
+
+**The database health check uses TCP.** It runs `pg_isready -h 127.0.0.1`. The official Postgres image starts a temporary server on a Unix socket during first-time setup. A plain `pg_isready` can report ready against that temporary server, and then the worker connects over the network a moment before the real server is up. Forcing TCP avoids that. The worker also retries its connection a limited number of times as a second line of defence, but it fails immediately on a wrong password or a missing database, since retrying those never helps.
+
+**Migrations are plain SQL files applied in numeric order.** Each one runs in its own transaction and is recorded in `schema_migrations` with a SHA-256 checksum. A Postgres advisory lock keeps two workers from migrating at once. If a file that was already applied has been edited, the run stops with an error instead of carrying on with a schema nobody has reviewed. The DDL uses `IF NOT EXISTS` too, so running the raw SQL by hand twice does no harm. That doesn't mean a migration should be edited after it has been applied. Add a new one instead.
+
+**No secrets in the image.** The Dockerfile copies only code, migrations and fixtures. `.dockerignore` and `.gitignore` keep `.env` files out. Credentials only arrive as environment variables at run time, and compose stops with a clear message if one is missing. The password never appears in `repr`, logs or the summary file, and source URLs are stored without credentials or query strings. The container runs as a non-root user with a read-only filesystem and all Linux capabilities dropped. The CI workflow checks that the built image contains no password.
+
+## Data contracts
+
+The brief says to treat completeness, CRS, units, source date and uncertainty as explicit contracts and never silently invent data. This is how each one is enforced:
+
+- **Geometry** is stored in `sites.geom` as `geometry(Polygon, 4326)` with a `ST_IsValid` check.
+- **Country** is a non-null `country_code` on every business table, with a format check. Keys are `(country_code, id)`, so `site-001` can exist in both DE and NL. There is a test for exactly that.
+- **CRS**: only WGS 84 lon/lat is accepted. A feature collection that declares another CRS is rejected, and so are coordinates outside the lon/lat range, which is what mislabelled projected data looks like.
+- **Units**: the source has to say `source_units: "m2"`.
+- **Area**: the declared `area_m2` must agree with the geometry to within the declared uncertainty or `IRIS_AREA_TOLERANCE_PCT`, whichever is larger. This catches hectares entered as square metres. I had to fix my own fixture because its areas didn't match its geometry.
+- **Source date and uncertainty** are required. Missing values are errors, never defaults.
+- **Batches are all or nothing.** One bad in-scope feature rejects the run, every problem is listed, and the failure is recorded in `pilot_runs`. Features for other countries or regions are counted and skipped.
 
 ## Tests
 
-`98` tests: config validation, every ingest contract above, source adapters (incl. path traversal, HTTP size/timeout errors),
-migration ordering/checksums/atomicity, connect retry vs fail-fast classification, and **real PostgreSQL 16 / PostGIS 3.4
-integration tests** (idempotent migrations, DE/NW then NL/LI on unchanged code, country-scoped identity, atomic rejection of a
-bad batch, DB constraints, PostGIS geography area cross-check, smoke test passing and failing correctly).
+There are 98 tests. Most are plain unit tests: config validation, each data contract above, the source adapters (including a path traversal attempt and HTTP size and error handling), and migration file rules. The rest run against a real PostgreSQL 16 with PostGIS 3.4 and are the ones I care most about. They cover migrations being idempotent and refusing edited files, a failed migration leaving nothing half-applied, running `DE/NW` and then `NL/LI` with no code change, a bad batch leaving the table empty, the database constraints themselves, the stored area matching PostGIS's own geography area, and the smoke test both passing and failing when it should.
 
-## Acceptance criteria
+## What the smoke test checks
 
-| # | Criterion | How it is met / verified |
-|---|---|---|
-| 1 | Change DE/NW without code edits | Only env values differ between `.env.example` (DE/NW) and `.env.second-host.example` (NL/LI); `test_switching_de_nw_to_nl_li_needs_no_code_change`, `verify-portability.sh` |
-| 2 | No secrets baked into images | see Architecture; CI step "No secrets baked into the image" |
-| 3 | DB healthy before worker | TCP health check + `depends_on: service_healthy` + bounded retry |
-| 4 | Clean host runs documented smoke path | Quick start; CI job `clean-host-smoke` runs it from a fresh checkout on both configs |
+It connects and confirms PostgreSQL is 16 or newer and PostGIS is 3.4 or newer. It then checks that all migrations are applied with matching checksums, that `sites.geom` has the expected type and SRID, and that `country_code` is `NOT NULL` on both tables. It requires rows for the configured country and region and valid stored geometries. Finally it checks that the latest run for that scope succeeded and that the summary file matches both the configuration and the database. A missing file or an empty scope fails the test.
 
-## Deliberate simplifications and production evolution
+## Simplifications I made on purpose
 
-* Source adapters: local fixture and plain `http(s)` GeoJSON only. Production: per-country adapters behind the same `IRIS_SOURCE_ENDPOINT` contract, auth via secret files, conditional fetches.
-* Polygon only (no MultiPolygon) and a local equirectangular area check; production would normalise multipart geometries explicitly and use geodesic area in PostGIS.
-* Postgres password is a compose environment variable (simple, portable). Production: Docker/K8s secrets via `POSTGRES_PASSWORD_FILE` (already supported by the app), TLS to the DB, a non-superuser application role with migrations run by a separate owner role.
-* One-shot worker; production would run it on a schedule (cron/Kubernetes CronJob) with metrics, and promote data through staging tables before it becomes visible (controlled promotion).
-* Named volume for DB data; production adds backups and a pinned image digest instead of a tag.
+- Sources are a local fixture or a plain HTTP GeoJSON URL. A real deployment would have one adapter per country behind the same endpoint setting, with authentication.
+- Only `Polygon` is accepted, not `MultiPolygon`, and the area check uses a local flat projection that is fine for small sites. Production should normalise multi-part geometries explicitly and use geodesic area in PostGIS.
+- The database password is a plain environment variable, which keeps the stack portable. For production I would use secret files (already supported through `POSTGRES_PASSWORD_FILE`), TLS to the database, and a non-superuser application role with migrations run by a separate owner role.
+- The worker runs once. In production it would run on a schedule, with metrics and alerting, and load into a staging table before data becomes visible.
+- DB data lives in a named volume with no backups. Production would add backups and pin the image by digest rather than by tag.
 
-## Layout
+## Repository layout
 
 ```
-docker-compose.yml  Dockerfile  .env.example  .env.second-host.example  Makefile
-src/iris/           config.py db.py migrate.py sources.py ingest.py worker.py smoke.py
-migrations/         001_init.sql  002_pilot_runs.sql
-fixtures/           sites.geojson   (5 features: DE/NW x2, DE/BY, NL/LI x2; areas consistent with geometry)
-tests/              unit + integration
-scripts/            verify-portability.sh
-.github/workflows/  ci.yml
+docker-compose.yml, Dockerfile, .env.example, .env.second-host.example
+src/iris/       config, db, migrate, sources, ingest, worker, smoke
+migrations/     001_init.sql, 002_pilot_runs.sql
+fixtures/       sites.geojson (DE/NW x2, DE/BY x1, NL/LI x2)
+tests/          unit and integration tests
+scripts/        verify-portability.sh
+.github/        ci.yml (runs the tests and both smoke paths from a fresh checkout)
 ```
