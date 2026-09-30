@@ -1,0 +1,28 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  clean-host-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit + integration tests (inside Docker, real PostGIS)
+        run: |
+          cp .env.example .env
+          IRIS_UID=$(id -u) IRIS_GID=$(id -g) docker compose --profile test run --build --rm test
+      - name: Smoke path, dev config (DE/NW)
+        run: IRIS_UID=$(id -u) IRIS_GID=$(id -g) docker compose --profile smoke run --build --rm smoke
+      - name: Smoke path, second-host config (NL/LI)
+        run: |
+          docker compose --profile smoke --profile test down -v
+          export IRIS_UID=$(id -u) IRIS_GID=$(id -g) POSTGRES_PASSWORD=$(openssl rand -hex 16)
+          docker compose --env-file .env.second-host.example --profile smoke run --build --rm smoke
+      - name: No secrets baked into the image
+        run: |
+          docker build -q -t iris-pilot:inspect --target runtime .
+          if docker history --no-trunc iris-pilot:inspect | grep -Ei 'password|secret'; then
+            echo "secret-like text found in image history"; exit 1
+          fi
+          if docker run --rm --entrypoint sh iris-pilot:inspect -c 'env' | grep -E '^POSTGRES_PASSWORD='; then
+            echo "password present in image environment"; exit 1
+          fi

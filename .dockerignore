@@ -1,0 +1,14 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+!.env.second-host.example
+output
+output-*
+**/__pycache__
+**/*.pyc
+.pytest_cache
+*.egg-info
+build
+dist

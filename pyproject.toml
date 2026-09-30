@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "iris-pilot-runtime"
+version = "0.2.0"
+description = "Portable Dockerized IRIS pilot runtime (Python + PostgreSQL/PostGIS)"
+requires-python = ">=3.12"
+# Exact, reproducible pins live in requirements.txt (used by the Docker image).
+dependencies = ["psycopg[binary]>=3.2,<4", "shapely>=2.0,<3"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+iris-worker = "iris.worker:main"
+iris-smoke = "iris.smoke:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+markers = ["integration: needs a live PostgreSQL/PostGIS (POSTGRES_* env vars)"]

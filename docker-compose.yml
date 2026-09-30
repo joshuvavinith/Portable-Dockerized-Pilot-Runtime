@@ -1,0 +1,105 @@
+# IRIS pilot runtime: PostgreSQL/PostGIS + one-shot Python worker.
+#
+# All host-/country-/region-specific values come from the environment
+# (`.env`, or `--env-file .env.second-host.example`). Nothing is hard-coded here.
+# Required variables use ${VAR:?msg} so a missing value fails immediately and clearly.
+
+x-iris-env: &iris-env
+  IRIS_COUNTRY_CODE: ${IRIS_COUNTRY_CODE:?set IRIS_COUNTRY_CODE, e.g. DE}
+  IRIS_REGION_CODE: ${IRIS_REGION_CODE:?set IRIS_REGION_CODE, e.g. NW}
+  IRIS_SOURCE_ENDPOINT: ${IRIS_SOURCE_ENDPOINT:?set IRIS_SOURCE_ENDPOINT, e.g. fixture://sites.geojson}
+  IRIS_OUTPUT_PATH: ${IRIS_OUTPUT_PATH:?set IRIS_OUTPUT_PATH (absolute path inside the container)}
+  IRIS_AREA_TOLERANCE_PCT: ${IRIS_AREA_TOLERANCE_PCT:-5}
+  IRIS_LOG_LEVEL: ${IRIS_LOG_LEVEL:-INFO}
+  POSTGRES_HOST: db
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+  POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+
+x-iris-app: &iris-app
+  build:
+    context: .
+    target: runtime
+  image: ${IRIS_IMAGE:-iris-pilot:local}
+  environment: *iris-env
+  # Run as the host user so the bind-mounted output directory is writable.
+  user: "${IRIS_UID:-1000}:${IRIS_GID:-1000}"
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  volumes:
+    - ${IRIS_OUTPUT_HOST_DIR:-./output}:${IRIS_OUTPUT_PATH}
+
+services:
+  db:
+    image: ${POSTGIS_IMAGE:-postgis/postgis:16-3.4}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Loopback only, random host port unless POSTGRES_PUBLISH_PORT is set, so a
+    # host that already runs PostgreSQL on 5432 does not conflict.
+    ports:
+      - "127.0.0.1:${POSTGRES_PUBLISH_PORT:-}:5432"
+    healthcheck:
+      # -h 127.0.0.1 forces TCP. The official image runs a temporary, socket-only
+      # server during first-time init; a socket check would report "ready" too
+      # early and the worker would then hit connection errors.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 5s
+    restart: unless-stopped
+
+  worker:
+    <<: *iris-app
+    command: ["python", "-m", "iris.worker"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  # docker compose --profile smoke run --rm smoke
+  smoke:
+    <<: *iris-app
+    profiles: ["smoke"]
+    command: ["python", "-m", "iris.smoke"]
+    depends_on:
+      db:
+        condition: service_healthy
+      worker:
+        condition: service_completed_successfully
+    restart: "no"
+
+  # docker compose --profile test run --rm test
+  test:
+    profiles: ["test"]
+    build:
+      context: .
+      target: test
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  postgres_data:

@@ -1,0 +1,212 @@
+{
+  "type": "FeatureCollection",
+  "name": "iris-local-sites-fixture",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "EPSG:4326"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "id": "site-001",
+      "properties": {
+        "country_code": "DE",
+        "region_code": "NW",
+        "source_date": "2026-09-29",
+        "area_m2": 10000.0,
+        "uncertainty_m2": 250.0,
+        "source_units": "m2",
+        "source": "local-fixture"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              6.9,
+              50.9
+            ],
+            [
+              6.901426,
+              50.9
+            ],
+            [
+              6.901426,
+              50.900899
+            ],
+            [
+              6.9,
+              50.900899
+            ],
+            [
+              6.9,
+              50.9
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "site-002",
+      "properties": {
+        "country_code": "DE",
+        "region_code": "NW",
+        "source_date": "2026-09-29",
+        "area_m2": 30000.0,
+        "uncertainty_m2": 500.0,
+        "source_units": "m2",
+        "source": "local-fixture"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              7.0,
+              51.0
+            ],
+            [
+              7.002858,
+              51.0
+            ],
+            [
+              7.002858,
+              51.001349
+            ],
+            [
+              7.0,
+              51.001349
+            ],
+            [
+              7.0,
+              51.0
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "site-003",
+      "properties": {
+        "country_code": "DE",
+        "region_code": "BY",
+        "source_date": "2026-09-29",
+        "area_m2": 20000.0,
+        "uncertainty_m2": 400.0,
+        "source_units": "m2",
+        "source": "local-fixture"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              11.5,
+              48.1
+            ],
+            [
+              11.501347,
+              48.1
+            ],
+            [
+              11.501347,
+              48.101799
+            ],
+            [
+              11.5,
+              48.101799
+            ],
+            [
+              11.5,
+              48.1
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "site-001",
+      "properties": {
+        "country_code": "NL",
+        "region_code": "LI",
+        "source_date": "2026-09-29",
+        "area_m2": 15000.0,
+        "uncertainty_m2": 300.0,
+        "source_units": "m2",
+        "source": "local-fixture"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              5.7,
+              50.85
+            ],
+            [
+              5.701424,
+              50.85
+            ],
+            [
+              5.701424,
+              50.851349
+            ],
+            [
+              5.7,
+              50.851349
+            ],
+            [
+              5.7,
+              50.85
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "site-002",
+      "properties": {
+        "country_code": "NL",
+        "region_code": "LI",
+        "source_date": "2026-09-29",
+        "area_m2": 10000.0,
+        "uncertainty_m2": 200.0,
+        "source_units": "m2",
+        "source": "local-fixture"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              5.71,
+              50.86
+            ],
+            [
+              5.71114,
+              50.86
+            ],
+            [
+              5.71114,
+              50.861124
+            ],
+            [
+              5.71,
+              50.861124
+            ],
+            [
+              5.71,
+              50.86
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}
